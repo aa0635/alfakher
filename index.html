@@ -264,7 +264,7 @@ async function doResetPw(id){
 async function vSettings(){
  const nat=window.mizanNative?await window.mizanNative.info():null,au=(await db.all('audit')).sort((a,b)=>b.at.localeCompare(a.at)).slice(0,40);
  const f=(k,l,t='text')=>`<div><label>${l}</label><input id="st_${k}" type="${t}" value="${esc(SET[k])}"></div>`;
- return `<div class="card"><h3>بيانات المنشأة والضريبة</h3><div class="row">${f('company','اسم المنشأة')}${f('vat_no','الرقم الضريبي (15 رقمًا)')}${f('vat_rate','نسبة الضريبة %','number')}${f('currency','العملة')}${f('address','العنوان')}<div><label>السماح بمخزون سالب</label><select id="st_allow_neg"><option value="0">لا (موصى به)</option><option value="1" ${SET.allow_neg?'selected':''}>نعم</option></select></div></div><button class="btn" onclick="saveSettings()">حفظ الإعدادات</button></div>
+ return `<div class="card"><h3>بيانات المنشأة والضريبة</h3><div class="row">${f('company','اسم المنشأة')}${f('vat_no','الرقم الضريبي (15 رقمًا)')}${f('vat_rate','نسبة الضريبة %','number')}${f('currency','العملة')}${f('address','العنوان')}<div><label>السماح بمخزون سالب</label><select id="st_allow_neg"><option value="0">لا (موصى به)</option><option value="1" ${SET.allow_neg?'selected':''}>نعم</option></select></div></div><div class="row"><div><label>الشروط والأحكام (تُطبع أسفل فاتورة البيع، وكل شرط في سطر)</label><textarea id="st_terms" rows="6" maxlength="2000">${esc(SET.terms||'')}</textarea><button class="btn sec sm" type="button" onclick="termsSample()" style="margin-top:8px">إدراج نص مقترح (راجعه وعدّله)</button></div></div><button class="btn" onclick="saveSettings()">حفظ الإعدادات</button></div>
  <div class="card"><h3>النسخ الاحتياطي والاستعادة</h3><p class="mut">${nat?'قاعدة بيانات SQLite محلية: '+esc(nat.path)+(nat.portable?' (نسخة محمولة)':''):'تُحفظ البيانات داخل متصفح هذا الجهاز.'} للنقل إلى جهاز آخر: أنشئ نسخة احتياطية، انقلها بـ USB، ثم استعدها هناك.</p>
  <div class="row"><div><label>كلمة مرور لحماية النسخة (اختياري، موصى بها)</label><input id="bk_pw" type="password" autocomplete="new-password"></div></div>
  <button class="btn" onclick="backup()">إنشاء نسخة احتياطية وتنزيلها</button> ${window.mizanNative?'<button class="btn sec" onclick="nativeBackup()">نسخة كاملة لقاعدة البيانات (.db)</button> <button class="btn sec" onclick="mizanNative.openDataDir()">فتح مجلد البيانات</button>':''}
@@ -276,7 +276,7 @@ async function saveSettings(){
  if(!g('company'))return flash('اسم المنشأة مطلوب.',1);
  if(vat&&!/^\d{15}$/.test(vat))return flash('الرقم الضريبي يجب أن يتكون من 15 رقمًا.',1);
  if(!(rate>=0&&rate<=100))return flash('نسبة الضريبة غير صحيحة.',1);
- await setSet('company',g('company'));await setSet('vat_no',vat);await setSet('vat_rate',rate);await setSet('currency',g('currency'));await setSet('address',g('address'));await setSet('allow_neg',$('#st_allow_neg').value==='1');
+ await setSet('company',g('company'));await setSet('vat_no',vat);await setSet('vat_rate',rate);await setSet('currency',g('currency'));await setSet('address',g('address'));await setSet('allow_neg',$('#st_allow_neg').value==='1');await setSet('terms',String($('#st_terms').value||'').trim().slice(0,2000));
  await audit('تعديل الإعدادات');shell();go('settings');flash('تم حفظ الإعدادات.')}
 
 /* ========== المرحلة 2: المنتجات والمخزون والعملاء والموردون ========== */
@@ -452,7 +452,7 @@ async function saveInv(){
  if(paid<c.total&&!D.party)return flash('اختر العميل لتسجيل المبلغ المتبقي.',1);
  if(S){const e=await needStock(D.lines);if(e)return flash(e,1)}
  const all=await db.all(stt(k)),party=D.party?await db.get(ptn(k),D.party):null;
- const inv={id:uid(),no:nextInv(S?'INV-':'PUR-',all),date:D.date,party:D.party||'',pname:party?party.name:(S?'عميل نقدي':''),type:S?(party?'tax':'simple'):'',lines:D.lines,...c,paid,paid0:paid,method:D.method,status:'active',ret:0,refunded:0};
+ const inv={id:uid(),no:nextInv(S?'INV-':'PUR-',all),date:D.date,party:D.party||'',pname:party?party.name:(S?'عميل نقدي':''),type:S?(party?'tax':'simple'):'',lines:D.lines,...c,paid,paid0:paid,method:D.method,status:'active',ret:0,refunded:0,at:new Date().toISOString().replace(/\.\d{3}Z$/,'Z'),terms:S?(SET.terms||''):''};
  try{await atomic(['products','stock','journal',stt(k)],async T=>{for(const l of inv.lines){
   if(!S){const p=await T.get('products',l.pid);inv.rd=(inv.rd||0)+l.net-await inflow(T,p,l.qty,l.net)}
   await stockMove(l.pid,S?'sale':'purchase',l.qty,inv.no,inv.no,T)}
@@ -493,7 +493,7 @@ async function showInv(k,id){
  $('#frm').innerHTML=`<div class="card"><div style="text-align:center"><img src="${LOGO}" alt="" style="max-height:90px;max-width:100%;height:auto"></div><h3 style="text-align:center;border:0;padding:0">${tt}${i.status!=='active'?' (ملغاة)':''}</h3><p><b>${esc(SET.company)}</b> · الرقم الضريبي: ${esc(SET.vat_no||'—')} ${esc(SET.address||'')}<br>رقم الفاتورة: ${i.no} · التاريخ: ${i.date}<br>${S?'العميل':'المورد'}: ${esc(i.pname)} ${p&&p.vat_no?'· الرقم الضريبي: '+esc(p.vat_no):''}</p>
  <div class="tw"><table><tr><th>المنتج</th><th class="n">الكمية</th><th class="n">السعر</th><th class="n">الخصم</th><th class="n">الصافي</th><th class="n">الضريبة</th><th class="n">الإجمالي</th></tr>${i.lines.map(l=>`<tr><td>${esc(l.name)}</td><td class="n">${fmtQ(l.qty)}</td><td class="n">${fmt(l.price)}</td><td class="n">${fmt(l.disc)}</td><td class="n">${fmt(l.net)}</td><td class="n">${fmt(l.vat)} (${l.rate}%)</td><td class="n">${fmt(l.net+l.vat)}</td></tr>`).join('')}</table></div>
  <p><b>الإجمالي قبل الضريبة:</b> ${fmt(i.sub)} · <b>الضريبة:</b> ${fmt(i.vat)} · <b>الإجمالي النهائي:</b> ${fmt(i.total)}<br><b>المدفوع:</b> ${fmt(i.paid-i.refunded)} · <b>المتبقي:</b> ${fmt(i.status==='active'?dueOf(i):0)} · طريقة الدفع: ${PAY[i.method]}</p>
- ${S?`<p class="mut" style="word-break:break-all">بيانات رمز QR (TLV/Base64): ${tlv([SET.company,SET.vat_no||'',new Date(i.date).toISOString(),(i.total/100).toFixed(2),(i.vat/100).toFixed(2)])}</p>`:''}
+ ${S?invFoot(i):''}
  <button class="btn no-print" onclick="document.body.classList.add('pi');print();document.body.classList.remove('pi')">طباعة / حفظ PDF</button> <button class="btn sec no-print" onclick="shareInv('${k}','${id}')">مشاركة</button> <button class="btn sec no-print" onclick="$('#frm').innerHTML=''">إغلاق</button></div>`;$('#frm').scrollIntoView()}
 async function shareInv(k,id){const i=await db.get(stt(k),id),t=SET.company+' — فاتورة '+i.no+' بتاريخ '+i.date+'\nالإجمالي: '+fmt(i.total)+' (شامل الضريبة '+fmt(i.vat)+')';
  if(navigator.share)try{await navigator.share({title:i.no,text:t})}catch(e){}else window.open('https://wa.me/?text='+encodeURIComponent(t))}
@@ -733,6 +733,63 @@ function outFile(name,text,mime){window.__LASTOUT={name,text};if(window.__MIZAN_
  document.body.appendChild(o);const ta=o.querySelector('#of_t');ta.value=text;
  o.querySelector('#of_d').onclick=()=>{try{dl()}catch(e){}};o.querySelector('#of_x').onclick=()=>o.remove();
  o.querySelector('#of_c').onclick=async()=>{try{await navigator.clipboard.writeText(text)}catch(e){ta.focus();ta.select();try{document.execCommand('copy')}catch(_){}}o.querySelector('#of_c').textContent='تم النسخ ✓'}}
+/* ========== مولّد رمز QR (وضع البايتات، مستوى تصحيح M، إصدارات 1–16) ========== */
+const QRC=(()=>{
+ const EC=[0,[10,1,16,0,0],[16,1,28,0,0],[26,1,44,0,0],[18,2,32,0,0],[24,2,43,0,0],[16,4,27,0,0],[18,4,31,0,0],[22,2,38,2,39],[22,3,36,2,37],[26,4,43,1,44],[30,1,50,4,51],[22,6,36,2,37],[22,8,37,1,38],[24,4,40,5,41],[24,5,41,5,42],[28,7,45,3,46]];
+ const AL=[0,[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50],[6,30,54],[6,32,58],[6,34,62],[6,26,46,66],[6,26,48,70],[6,26,50,74]];
+ const EXP=new Uint8Array(512),LOG=new Uint8Array(256);{let x=1;for(let i=0;i<255;i++){EXP[i]=x;LOG[x]=i;x<<=1;if(x&256)x^=0x11d}for(let i=255;i<512;i++)EXP[i]=EXP[i-255]}
+ const mul=(a,b)=>a&&b?EXP[LOG[a]+LOG[b]]:0;
+ const rsGen=n=>{let g=[1];for(let i=0;i<n;i++){const h=new Array(g.length+1).fill(0);for(let j=0;j<g.length;j++){h[j]^=g[j];h[j+1]^=mul(g[j],EXP[i])}g=h}return g};
+ const rsEnc=(d,n)=>{const g=rsGen(n),r=new Array(n).fill(0);for(const x of d){const f=x^r.shift();r.push(0);if(f)for(let i=0;i<n;i++)r[i]^=mul(g[i+1],f)}return r};
+ const bit=(x,i)=>((x>>>i)&1)!==0;
+ function penalty(m){const n=m.length;let p=0;
+  for(let a=0;a<2;a++)for(let i=0;i<n;i++){const g=j=>a?m[j][i]:m[i][j];let run=1;
+   for(let j=1;j<n;j++){if(g(j)===g(j-1))run++;else{if(run>=5)p+=run-2;run=1}}if(run>=5)p+=run-2;
+   for(let j=0;j+11<=n;j++){let s='';for(let t=0;t<11;t++)s+=g(j+t)?1:0;if(s==='10111010000'||s==='00001011101')p+=40}}
+  for(let y=0;y<n-1;y++)for(let x=0;x<n-1;x++){const c=m[y][x];if(c===m[y][x+1]&&c===m[y+1][x]&&c===m[y+1][x+1])p+=3}
+  let dk=0;m.forEach(r=>r.forEach(c=>{if(c)dk++}));return p+10*Math.max(0,Math.ceil(Math.abs(dk*20-n*n*10)/(n*n))-1)}
+ function make(text){
+  const b=new TextEncoder().encode(String(text));let v=1;
+  for(;v<=16;v++){const e=EC[v];if(4+(v<10?8:16)+8*b.length<=(e[1]*e[2]+e[3]*e[4])*8)break}
+  if(v>16)throw new Error('البيانات أطول من سعة رمز QR');
+  const e=EC[v],cap=e[1]*e[2]+e[3]*e[4],bits=[],put=(x,n)=>{for(let i=n-1;i>=0;i--)bits.push((x>>>i)&1)};
+  put(4,4);put(b.length,v<10?8:16);b.forEach(x=>put(x,8));put(0,Math.min(4,cap*8-bits.length));while(bits.length%8)bits.push(0);
+  for(let p=0xEC;bits.length<cap*8;p^=0xEC^0x11)put(p,8);
+  const cw=[];for(let i=0;i<bits.length;i+=8){let x=0;for(let j=0;j<8;j++)x=x*2+bits[i+j];cw.push(x)}
+  const nb=e[1]+e[3],bl=[];let k=0;for(let i=0;i<nb;i++){const len=i<e[1]?e[2]:e[4],d=cw.slice(k,k+len);k+=len;bl.push({d,ec:rsEnc(d,e[0])})}
+  const out=[];for(let i=0;i<Math.max(e[2],e[4]);i++)bl.forEach(B=>{if(i<B.d.length)out.push(B.d[i])});for(let i=0;i<e[0];i++)bl.forEach(B=>out.push(B.ec[i]));
+  const n=17+4*v,M=Array.from({length:n},()=>new Array(n).fill(false)),F=Array.from({length:n},()=>new Array(n).fill(false));
+  const sf=(x,y,d)=>{M[y][x]=d;F[y][x]=true};
+  for(let i=0;i<n;i++){sf(6,i,i%2===0);sf(i,6,i%2===0)}
+  for(const [cx,cy] of [[3,3],[n-4,3],[3,n-4]])for(let dy=-4;dy<=4;dy++)for(let dx=-4;dx<=4;dx++){const x=cx+dx,y=cy+dy,d=Math.max(Math.abs(dx),Math.abs(dy));if(x>=0&&x<n&&y>=0&&y<n)sf(x,y,d!==2&&d!==4)}
+  const ap=AL[v],la=ap.length-1;
+  ap.forEach((cy,i)=>ap.forEach((cx,j)=>{if((i===0&&j===0)||(i===0&&j===la)||(i===la&&j===0))return;for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++)sf(cx+dx,cy+dy,Math.max(Math.abs(dx),Math.abs(dy))!==1)}));
+  const fmt=mask=>{const d=mask;let r=d;for(let i=0;i<10;i++)r=(r<<1)^((r>>>9)*0x537);const bs=((d<<10)|r)^0x5412;
+   for(let i=0;i<=5;i++)sf(8,i,bit(bs,i));sf(8,7,bit(bs,6));sf(8,8,bit(bs,7));sf(7,8,bit(bs,8));for(let i=9;i<15;i++)sf(14-i,8,bit(bs,i));
+   for(let i=0;i<8;i++)sf(n-1-i,8,bit(bs,i));for(let i=8;i<15;i++)sf(8,n-15+i,bit(bs,i));sf(8,n-8,true)};
+  fmt(0);
+  if(v>=7){let r=v;for(let i=0;i<12;i++)r=(r<<1)^((r>>>11)*0x1F25);const bs=(v<<12)|r;for(let i=0;i<18;i++){const c=bit(bs,i),a=n-11+i%3,bb=Math.floor(i/3);sf(a,bb,c);sf(bb,a,c)}}
+  let idx=0;for(let right=n-1;right>=1;right-=2){if(right===6)right=5;for(let vert=0;vert<n;vert++)for(let j=0;j<2;j++){const x=right-j,up=((right+1)&2)===0,y=up?n-1-vert:vert;if(!F[y][x]&&idx<out.length*8){M[y][x]=bit(out[idx>>>3],7-(idx&7));idx++}}}
+  const MK=[(x,y)=>(x+y)%2===0,(x,y)=>y%2===0,(x,y)=>x%3===0,(x,y)=>(x+y)%3===0,(x,y)=>(Math.floor(x/3)+Math.floor(y/2))%2===0,(x,y)=>x*y%2+x*y%3===0,(x,y)=>(x*y%2+x*y%3)%2===0,(x,y)=>((x+y)%2+x*y%3)%2===0];
+  let best=null,bp=1e9;
+  for(let mask=0;mask<8;mask++){const C=M.map(r=>r.slice());for(let y=0;y<n;y++)for(let x=0;x<n;x++)if(!F[y][x]&&MK[mask](x,y))C[y][x]=!C[y][x];
+   const sv=M.map(r=>r.slice());for(let y=0;y<n;y++)for(let x=0;x<n;x++)M[y][x]=C[y][x];fmt(mask);const R=M.map(r=>r.slice());
+   for(let y=0;y<n;y++)for(let x=0;x<n;x++)M[y][x]=sv[y][x];
+   const p=penalty(R);if(p<bp){bp=p;best=R}}
+  return best}
+ return{matrix:make,svg(text,px=130){const m=make(text),n=m.length,q=4;let d='';for(let y=0;y<n;y++)for(let x=0;x<n;x++)if(m[y][x])d+='M'+(x+q)+' '+(y+q)+'h1v1h-1z';
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+(n+2*q)+' '+(n+2*q)+'" width="'+px+'" height="'+px+'" shape-rendering="crispEdges" role="img" aria-label="رمز QR"><rect width="100%" height="100%" fill="#fff"/><path d="'+d+'" fill="#000"/></svg>'},EC,rawCw:v=>{let r=(16*v+128)*v+64;if(v>=2){const na=Math.floor(v/7)+2;r-=(25*na-10)*na-55;if(v>=7)r-=36}return r>>3}}
+})();
+
+/* ========== تذييل فاتورة البيع: الشروط والأحكام + رمز QR ========== */
+const TERMS_SAMPLE='1. تُراجع البضاعة عند الاستلام، ولا يُقبل أي اعتراض على الكمية أو الجودة بعد مغادرة العميل إلا بالاتفاق مع المنشأة.\n2. لا تُسترد المبالغ المدفوعة ولا تُستبدل البضاعة بعد الذبح أو التقطيع أو التجهيز بناءً على طلب العميل.\n3. تُسدَّد المبالغ المتبقية في الموعد المتفق عليه، وتحتفظ المنشأة بحقها في المطالبة بها.\n4. توقيع العميل أو استلامه للبضاعة إقرار بصحة بيانات الفاتورة وقبوله لهذه الشروط.';
+function termsSample(){$('#st_terms').value=TERMS_SAMPLE}
+/* حمولة QR: إن وُجد الرقم الضريبي فهي بصيغة TLV/Base64 بحقول الفاتورة الضريبية الخمسة (اسم البائع، الرقم الضريبي، الوقت، الإجمالي، الضريبة)، وإلا فهي ملخص نصي للفاتورة */
+function qrPayload(i){const vat=SET.vat_no;return vat?tlv([SET.company||'',vat,i.at||(i.date+'T00:00:00Z'),(i.total/100).toFixed(2),(i.vat/100).toFixed(2)]):[SET.company||'',i.no,i.date,(i.total/100).toFixed(2)].join(' | ')}
+function qrBlock(i){let svg='';try{svg=QRC.svg(qrPayload(i),132)}catch(e){}
+ return `<div class="qrbox" style="text-align:center">${svg}<div class="mut" style="font-size:12px;max-width:150px">${SET.vat_no?'رمز الفاتورة (QR)':'رمز QR ملخص الفاتورة'}</div>${SET.vat_no?'':'<div class="mut no-print" style="font-size:12px;max-width:150px">أدخل الرقم الضريبي في الإعدادات ليصبح الرمز بصيغة الفاتورة الضريبية</div>'}</div>`}
+function invFoot(i){const tm=i.terms!==undefined?i.terms:(SET.terms||'');
+ return `<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin:14px 0;border-top:1px dashed var(--line);padding-top:12px"><div style="flex:1;min-width:220px">${tm?`<b>الشروط والأحكام</b><div style="white-space:pre-wrap;line-height:1.8;font-size:14px;margin-top:4px">${esc(tm)}</div>`:'<span class="mut no-print">لا توجد شروط مضافة (الإعدادات ← الشروط والأحكام).</span>'}</div>${qrBlock(i)}</div>`}
 /* ========== النسخ الاحتياطي والاستعادة ========== */
 async function backup(){
  const data={};for(const s of STORES)data[s]=await db.all(s);
